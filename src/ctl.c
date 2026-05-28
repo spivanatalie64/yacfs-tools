@@ -8,6 +8,9 @@
 #include <time.h>
 #include <unistd.h>
 
+static int cmd_export(const char *pool);
+static int cmd_import(const char *pool);
+
 static void usage(const char *prog) {
     fprintf(stderr,
         "Usage: %s <pool_root> <command> [args]\n"
@@ -16,6 +19,8 @@ static void usage(const char *prog) {
         "  snapshots               List all snapshots\n"
         "  snapshot <name>         Create a snapshot\n"
         "  rollback <name>         Rollback to a snapshot\n"
+        "  export                  Export (lock) pool for safe detachment\n"
+        "  import                  Import (unlock) pool for mounting\n"
         "  info                    Detailed pool information\n"
         "\nExamples:\n"
         "  %s /data/pool status\n"
@@ -232,9 +237,52 @@ int main(int argc, char **argv) {
     } else if (strcmp(cmd, "rollback") == 0) {
         if (argc < 4) { fprintf(stderr, "Missing snapshot name\n"); return 1; }
         return cmd_rollback(pool, argv[3]);
+    } else if (strcmp(cmd, "export") == 0) {
+        return cmd_export(pool);
+    } else if (strcmp(cmd, "import") == 0) {
+        return cmd_import(pool);
     } else {
         fprintf(stderr, "Unknown command: %s\n", cmd);
         usage(argv[0]);
         return 1;
     }
+}
+
+static int cmd_export(const char *pool) {
+    char lockfile[4096];
+    snprintf(lockfile, sizeof(lockfile), "%s/.yacfs-lock", pool);
+    struct stat sb;
+    if (stat(lockfile, &sb) == 0) {
+        fprintf(stderr, "Pool %s is locked (already exported or in use)\n", pool);
+        return 1;
+    }
+    int fd = open(lockfile, O_WRONLY | O_CREAT | O_EXCL, 0644);
+    if (fd < 0) {
+        fprintf(stderr, "Cannot lock pool: %s\n", strerror(errno));
+        return 1;
+    }
+    dprintf(fd, "YAcFS Pool Export\n");
+    dprintf(fd, "Exported at: %lu\n", (unsigned long)time(NULL));
+    dprintf(fd, "Pool: %s\n", pool);
+    close(fd);
+    printf("Pool exported: %s\n", pool);
+    printf("Lock file: %s\n", lockfile);
+    printf("To import: yacfs-ctl %s import\n", pool);
+    return 0;
+}
+
+static int cmd_import(const char *pool) {
+    char lockfile[4096];
+    snprintf(lockfile, sizeof(lockfile), "%s/.yacfs-lock", pool);
+    if (unlink(lockfile) < 0) {
+        if (errno == ENOENT) {
+            printf("Pool %s is already unlocked (no lock file)\n", pool);
+            return 0;
+        }
+        fprintf(stderr, "Cannot unlock pool: %s\n", strerror(errno));
+        return 1;
+    }
+    printf("Pool imported: %s\n", pool);
+    printf("Lock file removed. Pool is ready for mounting.\n");
+    return 0;
 }
