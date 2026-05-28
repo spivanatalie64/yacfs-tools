@@ -1,0 +1,39 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxxhash-dev libzstd-dev
+      - name: Build
+        run: make
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: yacfs-tools
+          path: |
+            yacfs-gc
+            yacfs-scrub
+            yacfs-ctl
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxxhash-dev libzstd-dev fuse3
+      - name: Build
+        run: make
+      - name: Test help output
+        run: |
+          ./yacfs-gc 2>&1 | head -5
+          ./yacfs-scrub --help 2>&1 || true
+          ./yacfs-ctl 2>&1 | head -10
