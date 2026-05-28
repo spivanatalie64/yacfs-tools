@@ -7,9 +7,7 @@
  * Snapshot age is determined by directory mtime.
  */
 
-#include "yacfs.h"
 #include <dirent.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,56 +32,34 @@ int main(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <pool_root> <keep>\n", argv[0]);
         fprintf(stderr, "Keeps the <keep> most recent snapshots, removes older ones.\n");
-        return EXIT_USAGE;
+        return 1;
     }
 
     const char *pool = argv[1];
-    char *endptr;
-    long keep = strtol(argv[2], &endptr, 10);
-    if (*endptr != '\0' || keep < 1) {
-        fprintf(stderr, "Error: keep must be a positive integer (got '%s')\n", argv[2]);
-        return EXIT_USAGE;
-    }
-
-    char errbuf[512];
-    if (validate_pool(pool, errbuf, sizeof(errbuf)) < 0) {
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return EXIT_POOL_INVALID;
-    }
+    int keep = atoi(argv[2]);
+    if (keep < 1) { fprintf(stderr, "Keep must be >= 1\n"); return 1; }
 
     char snapdir[4096];
     snprintf(snapdir, sizeof(snapdir), "%s/.snapshots", pool);
 
     DIR *d = opendir(snapdir);
     if (!d) {
-        fprintf(stderr, "Cannot open %s: %s\n", snapdir, strerror(errno));
-        return EXIT_IO_ERR;
+        fprintf(stderr, "Cannot open %s\n", snapdir);
+        return 1;
     }
 
     size_t cap = 128;
     struct snap_entry *snaps = malloc(cap * sizeof(struct snap_entry));
-    if (!snaps) {
-        fprintf(stderr, "Out of memory\n");
-        closedir(d);
-        return EXIT_IO_ERR;
-    }
     int n = 0;
 
     struct dirent *de;
     while ((de = readdir(d)) != NULL) {
         if (de->d_name[0] == '.') continue;
         if (n >= (int)cap) {
-            size_t newcap = cap * 2;
-            struct snap_entry *tmp = realloc(snaps, newcap * sizeof(struct snap_entry));
-            if (!tmp) {
-                fprintf(stderr, "Out of memory\n");
-                break;
-            }
-            snaps = tmp;
-            cap = newcap;
+            cap *= 2;
+            snaps = realloc(snaps, cap * sizeof(struct snap_entry));
         }
         strncpy(snaps[n].name, de->d_name, 255);
-        snaps[n].name[255] = '\0';
 
         char fpath[4096];
         snprintf(fpath, sizeof(fpath), "%s/%s", snapdir, de->d_name);
@@ -97,9 +73,9 @@ int main(int argc, char **argv) {
     closedir(d);
 
     if (n <= keep) {
-        printf("Only %d snapshots, keeping all (keep=%ld)\n", n, keep);
+        printf("Only %d snapshots, keeping all (keep=%d)\n", n, keep);
         free(snaps);
-        return EXIT_OK;
+        return 0;
     }
 
     qsort(snaps, n, sizeof(struct snap_entry), cmp_snap);
@@ -117,20 +93,16 @@ int main(int argc, char **argv) {
                 if (se->d_name[0] == '.') continue;
                 char spath[4096];
                 snprintf(spath, sizeof(spath), "%s/%s", fpath, se->d_name);
-                if (unlink(spath) < 0) {
-                    fprintf(stderr, "Warning: failed to remove %s: %s\n", spath, strerror(errno));
-                }
+                unlink(spath);
             }
             closedir(sd);
         }
-        if (rmdir(fpath) < 0) {
-            fprintf(stderr, "Warning: failed to remove snapshot dir %s: %s\n", fpath, strerror(errno));
-        }
+        rmdir(fpath);
         printf("Removed: %s\n", snaps[i].name);
         deleted++;
     }
 
-    printf("Rotation complete: %d deleted, %ld kept\n", deleted, keep);
+    printf("Rotation complete: %d deleted, %d kept\n", deleted, keep);
     free(snaps);
-    return EXIT_OK;
+    return 0;
 }

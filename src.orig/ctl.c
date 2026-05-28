@@ -72,44 +72,20 @@ static int cmd_status(const char *pool) {
         }
     }
 
-    uint64_t blk_bytes = 0;
     snprintf(path, sizeof(path), "%s/blocks", pool);
-    DIR *bd = opendir(path);
-    if (bd) {
-        struct dirent *de;
-        while ((de = readdir(bd)) != NULL) {
-            if (de->d_name[0] == '.') continue;
-            char fpath[4096];
-            snprintf(fpath, sizeof(fpath), "%s/%s", path, de->d_name);
-            if (stat(fpath, &sb) == 0) blk_bytes += sb.st_size;
-        }
-        closedir(bd);
-    }
+    uint64_t blk_bytes = 0;
+    if (stat(path, &sb) == 0) blk_bytes = sb.st_size;
 
     uint64_t meta_bytes = 0;
     snprintf(path, sizeof(path), "%s/meta", pool);
-    DIR *md = opendir(path);
-    if (md) {
-        struct dirent *de;
-        while ((de = readdir(md)) != NULL) {
-            if (de->d_name[0] == '.') continue;
-            char fpath[4096];
-            snprintf(fpath, sizeof(fpath), "%s/%s", path, de->d_name);
-            if (stat(fpath, &sb) == 0) meta_bytes += sb.st_size;
-        }
-        closedir(md);
-    }
-
-    char blk_str[32], meta_str[32];
-    fmt_bytes(blk_bytes, blk_str, sizeof(blk_str));
-    fmt_bytes(meta_bytes, meta_str, sizeof(meta_str));
+    if (stat(path, &sb) == 0) meta_bytes = sb.st_size;
 
     printf("YAcFS Pool Status: %s\n", pool);
-    printf("  Inodes:        %d\n", nmeta);
-    printf("  Blocks:        %d\n", nblocks);
-    printf("  Snapshots:     %d\n", nsnaps);
-    printf("  Block storage: %s (%lu bytes)\n", blk_str, (unsigned long)blk_bytes);
-    printf("  Metadata:      %s (%lu bytes)\n", meta_str, (unsigned long)meta_bytes);
+    printf("  Inodes:   %d\n", nmeta);
+    printf("  Blocks:   %d\n", nblocks);
+    printf("  Snapshots: %d\n", nsnaps);
+    printf("  Block storage: %lu bytes\n", (unsigned long)blk_bytes);
+    printf("  Metadata:     %lu bytes\n", (unsigned long)meta_bytes);
     return 0;
 }
 
@@ -124,7 +100,7 @@ static int cmd_snapshots(const char *pool) {
             return 0;
         }
         fprintf(stderr, "Cannot open %s: %s\n", path, strerror(errno));
-        return EXIT_IO_ERR;
+        return 1;
     }
 
     printf("Snapshots in %s:\n", pool);
@@ -165,20 +141,16 @@ static int cmd_snapshot(const char *pool, const char *name) {
     struct stat sb;
     if (stat(dst, &sb) == 0) {
         fprintf(stderr, "Snapshot '%s' already exists\n", name);
-        return EXIT_IO_ERR;
+        return 1;
     }
 
     if (mkdir(dst, 0755) < 0) {
         fprintf(stderr, "Cannot create snapshot directory: %s\n", strerror(errno));
-        return EXIT_IO_ERR;
+        return 1;
     }
 
     DIR *d = opendir(src);
-    if (!d) {
-        rmdir(dst);
-        fprintf(stderr, "Cannot open meta directory '%s': %s\n", src, strerror(errno));
-        return EXIT_IO_ERR;
-    }
+    if (!d) { rmdir(dst); fprintf(stderr, "Cannot open meta: %s\n", strerror(errno)); return 1; }
 
     int copied = 0;
     struct dirent *de;
@@ -217,17 +189,8 @@ static int cmd_rollback(const char *pool, const char *name) {
 
     struct stat sb;
     if (stat(snapdir, &sb) < 0) {
-        fprintf(stderr, "Snapshot '%s' not found in pool '%s'\n", name, pool);
-        return EXIT_IO_ERR;
-    }
-    if (!S_ISDIR(sb.st_mode)) {
-        fprintf(stderr, "Snapshot '%s' is not a directory\n", name);
-        return EXIT_IO_ERR;
-    }
-
-    if (stat(metadir, &sb) < 0) {
-        fprintf(stderr, "Pool meta directory missing: %s\n", metadir);
-        return EXIT_POOL_INVALID;
+        fprintf(stderr, "Snapshot '%s' not found\n", name);
+        return 1;
     }
 
     printf("Rolling back to snapshot '%s'...\n", name);
@@ -235,13 +198,13 @@ static int cmd_rollback(const char *pool, const char *name) {
 
     if (rename(metadir, tmpdir) < 0) {
         fprintf(stderr, "Failed to backup current meta: %s\n", strerror(errno));
-        return EXIT_IO_ERR;
+        return 1;
     }
 
     if (rename(snapdir, metadir) < 0) {
         rename(tmpdir, metadir);
         fprintf(stderr, "Failed to restore snapshot: %s\n", strerror(errno));
-        return EXIT_IO_ERR;
+        return 1;
     }
 
     char backup[4096];
@@ -253,15 +216,15 @@ static int cmd_rollback(const char *pool, const char *name) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 3) { usage(argv[0]); return EXIT_USAGE; }
+    if (argc < 3) { usage(argv[0]); return 1; }
 
     const char *pool = argv[1];
     const char *cmd = argv[2];
 
-    char errbuf[512];
-    if (validate_pool(pool, errbuf, sizeof(errbuf)) < 0) {
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return EXIT_POOL_INVALID;
+    struct stat sb;
+    if (stat(pool, &sb) < 0) {
+        fprintf(stderr, "Pool not found: %s\n", pool);
+        return 1;
     }
 
     if (strcmp(cmd, "status") == 0 || strcmp(cmd, "info") == 0)
@@ -269,10 +232,10 @@ int main(int argc, char **argv) {
     else if (strcmp(cmd, "snapshots") == 0 || strcmp(cmd, "list") == 0)
         return cmd_snapshots(pool);
     else if (strcmp(cmd, "snapshot") == 0 || strcmp(cmd, "create") == 0) {
-        if (argc < 4) { fprintf(stderr, "Missing snapshot name\n"); return EXIT_USAGE; }
+        if (argc < 4) { fprintf(stderr, "Missing snapshot name\n"); return 1; }
         return cmd_snapshot(pool, argv[3]);
     } else if (strcmp(cmd, "rollback") == 0) {
-        if (argc < 4) { fprintf(stderr, "Missing snapshot name\n"); return EXIT_USAGE; }
+        if (argc < 4) { fprintf(stderr, "Missing snapshot name\n"); return 1; }
         return cmd_rollback(pool, argv[3]);
     } else if (strcmp(cmd, "export") == 0) {
         return cmd_export(pool);
@@ -281,7 +244,7 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "Unknown command: %s\n", cmd);
         usage(argv[0]);
-        return EXIT_USAGE;
+        return 1;
     }
 }
 
@@ -290,13 +253,13 @@ static int cmd_export(const char *pool) {
     snprintf(lockfile, sizeof(lockfile), "%s/.yacfs-lock", pool);
     struct stat sb;
     if (stat(lockfile, &sb) == 0) {
-        fprintf(stderr, "Pool %s is already locked (exported or in use)\n", pool);
-        return EXIT_IO_ERR;
+        fprintf(stderr, "Pool %s is locked (already exported or in use)\n", pool);
+        return 1;
     }
     int fd = open(lockfile, O_WRONLY | O_CREAT | O_EXCL, 0644);
     if (fd < 0) {
         fprintf(stderr, "Cannot lock pool: %s\n", strerror(errno));
-        return EXIT_IO_ERR;
+        return 1;
     }
     dprintf(fd, "YAcFS Pool Export\n");
     dprintf(fd, "Exported at: %lu\n", (unsigned long)time(NULL));
@@ -317,7 +280,7 @@ static int cmd_import(const char *pool) {
             return 0;
         }
         fprintf(stderr, "Cannot unlock pool: %s\n", strerror(errno));
-        return EXIT_IO_ERR;
+        return 1;
     }
     printf("Pool imported: %s\n", pool);
     printf("Lock file removed. Pool is ready for mounting.\n");

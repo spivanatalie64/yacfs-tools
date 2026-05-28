@@ -92,38 +92,35 @@ int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <pool_root>\n", argv[0]);
         fprintf(stderr, "Removes orphaned block files not referenced by any inode.\n");
-        return EXIT_USAGE;
-    }
-
-    char errbuf[512];
-    if (validate_pool(argv[1], errbuf, sizeof(errbuf)) < 0) {
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return EXIT_POOL_INVALID;
+        return 1;
     }
 
     char metadir[4096], blkdir[4096];
     snprintf(metadir, sizeof(metadir), "%s/meta", argv[1]);
     snprintf(blkdir, sizeof(blkdir), "%s/blocks", argv[1]);
 
+    struct stat sb;
+    if (stat(metadir, &sb) < 0 || stat(blkdir, &sb) < 0) {
+        fprintf(stderr, "Invalid pool: %s (missing meta/ or blocks/)\n", argv[1]);
+        return 1;
+    }
+
     uint64_t *meta_blocks = NULL, *blk_blocks = NULL;
     int nmeta = 0, nblk = 0;
 
     if (read_meta_blocks(metadir, &meta_blocks, &nmeta) < 0) {
-        fprintf(stderr, "Failed to scan meta/: %s\n", strerror(errno));
-        return EXIT_IO_ERR;
+        fprintf(stderr, "Failed to scan meta/\n");
+        return 1;
     }
     if (read_all_blocks(blkdir, &blk_blocks, &nblk) < 0) {
-        fprintf(stderr, "Failed to scan blocks/: %s\n", strerror(errno));
+        fprintf(stderr, "Failed to scan blocks/\n");
         free(meta_blocks);
-        return EXIT_IO_ERR;
+        return 1;
     }
 
     qsort(meta_blocks, nmeta, sizeof(uint64_t), cmp_u64);
 
     int orphaned = 0, kept = 0;
-    uint64_t bytes_reclaimed = 0;
-    int is_tty = isatty(STDOUT_FILENO);
-
     for (int i = 0; i < nblk; i++) {
         int found = 0;
         if (bsearch(&blk_blocks[i], meta_blocks, nmeta, sizeof(uint64_t), cmp_u64))
@@ -136,32 +133,17 @@ int main(int argc, char **argv) {
         if (found) {
             kept++;
         } else {
-            struct stat sb;
-            uint64_t fsize = 0;
-            if (stat(fpath, &sb) == 0) fsize = sb.st_size;
-
             if (unlink(fpath) == 0) {
-                bytes_reclaimed += fsize;
+                printf("Removed orphan: %s\n", fname);
                 orphaned++;
             } else {
-                fprintf(stderr, "Failed to remove %s: %s\n", fname, strerror(errno));
+                fprintf(stderr, "Failed to remove: %s\n", fname);
             }
         }
-
-        if (is_tty && nblk > 0 && (i + 1) % 100 == 0) {
-            int pct = (int)(((i + 1) * 100LL) / nblk);
-            printf("\rProgress: %d/%d blocks checked (%d%%)", i + 1, nblk, pct);
-            fflush(stdout);
-        }
     }
-    if (is_tty) printf("\r");
 
-    char reclaimed_str[32];
-    fmt_bytes(bytes_reclaimed, reclaimed_str, sizeof(reclaimed_str));
-
-    printf("Summary: %d blocks kept, %d orphaned and removed\n", kept, orphaned);
-    printf("Space reclaimed: %s (%lu bytes)\n", reclaimed_str, (unsigned long)bytes_reclaimed);
+    printf("\nSummary: %d blocks kept, %d orphaned and removed\n", kept, orphaned);
     free(meta_blocks);
     free(blk_blocks);
-    return EXIT_OK;
+    return 0;
 }

@@ -7,7 +7,6 @@
  * and initializes the root inode.
  */
 
-#include "yacfs.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,54 +21,31 @@ int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <pool_root> [pool_root2 ...]\n", argv[0]);
         fprintf(stderr, "Creates YAcFS pool directories and initializes root inode.\n");
-        return EXIT_USAGE;
+        return 1;
     }
 
-    int errors = 0;
     for (int i = 1; i < argc; i++) {
         const char *pool = argv[i];
 
         struct stat sb;
         if (stat(pool, &sb) == 0) {
-            if (!S_ISDIR(sb.st_mode)) {
-                fprintf(stderr, "Error: %s exists but is not a directory\n", pool);
-                errors++;
-                continue;
-            }
             fprintf(stderr, "Warning: %s already exists, checking structure...\n", pool);
         } else {
             if (mkdir(pool, 0755) < 0) {
                 fprintf(stderr, "Cannot create pool %s: %s\n", pool, strerror(errno));
-                errors++;
-                continue;
+                return 1;
             }
         }
 
         char path[4096];
-        int ok = 1;
-
         snprintf(path, sizeof(path), "%s/blocks", pool);
-        if (mkdir(path, 0755) < 0 && errno != EEXIST) {
-            fprintf(stderr, "Cannot create %s: %s\n", path, strerror(errno));
-            ok = 0;
-        }
+        mkdir(path, 0755);
 
         snprintf(path, sizeof(path), "%s/meta", pool);
-        if (mkdir(path, 0755) < 0 && errno != EEXIST) {
-            fprintf(stderr, "Cannot create %s: %s\n", path, strerror(errno));
-            ok = 0;
-        }
+        mkdir(path, 0755);
 
         snprintf(path, sizeof(path), "%s/.snapshots", pool);
-        if (mkdir(path, 0755) < 0 && errno != EEXIST) {
-            fprintf(stderr, "Cannot create %s: %s\n", path, strerror(errno));
-            ok = 0;
-        }
-
-        if (!ok) {
-            errors++;
-            continue;
-        }
+        mkdir(path, 0755);
 
         // Initialize root inode
         snprintf(path, sizeof(path), "%s/meta/00000000000000000001.ino", pool);
@@ -103,15 +79,9 @@ int main(int argc, char **argv) {
             int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
             if (fd < 0) {
                 fprintf(stderr, "Cannot create root inode: %s\n", strerror(errno));
-                errors++;
-                continue;
+                return 1;
             }
-            if (write(fd, &root_inode, sizeof(root_inode)) != (ssize_t)sizeof(root_inode)) {
-                fprintf(stderr, "Failed to write root inode: %s\n", strerror(errno));
-                close(fd);
-                errors++;
-                continue;
-            }
+            write(fd, &root_inode, sizeof(root_inode));
             close(fd);
         }
 
@@ -121,5 +91,5 @@ int main(int argc, char **argv) {
         printf("  .snapshots/ — snapshot storage\n");
     }
 
-    return errors > 0 ? EXIT_IO_ERR : EXIT_OK;
+    return 0;
 }

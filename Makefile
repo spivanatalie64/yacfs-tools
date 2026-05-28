@@ -40,7 +40,7 @@ install: all man systemd completion
 	cp completion/yacfs.bash $(PREFIX)/share/bash-completion/completions/yacfs
 
 man:
-	gzip -f man/yacfs.1 2>/dev/null || true
+	gzip -k -f man/yacfs.1 2>/dev/null || true
 
 systemd:
 	@echo "Systemd unit: systemd/yacfs@.service"
