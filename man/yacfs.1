@@ -1,0 +1,77 @@
+.TH YACFS 1 "2026-05-28" "YAcFS v2.1" "User Commands"
+.SH NAME
+yacfs \- Yet Another common File System
+.SH SYNOPSIS
+.B yacfs
+\fImountpoint\fR [\fB\-o\fR \fIoptions\fR]
+.SH DESCRIPTION
+YAcFS is a copy-on-write, content-addressed, checksummed userspace filesystem
+built on FUSE3. It provides ZFS-class data integrity features (checksums,
+compression, snapshots, pooling) without ZFS's licensing restrictions or btrfs's
+stability issues.
+
+.SH OPTIONS
+.TP
+.BI \-o\~pool=\fIdir\fR[\fB:\fIdir\fR]
+Pool directory (required). Multiple directories can be separated by ':'
+for pool spanning.
+.TP
+.BI \-o\~compress=\fIlevel\fR
+ZSTD compression level (0=off, default=1, max=19). Level 1 is optimal for
+most workloads. Levels above 3 trade write speed for storage efficiency.
+.TP
+.BI \-o\~snapdir=\fIdir\fR
+Snapshot storage directory (default: \fIpool\fB/.snapshots\fR).
+.TP
+.BR \-f
+Run in foreground.
+.TP
+.BR \-d
+Enable FUSE debug output (implies \-f).
+
+.SH EXAMPLES
+.TP
+Basic mount
+yacfs /mnt/data \-o pool=/data/pool
+.TP
+Pool spanning
+yacfs /mnt/data \-o pool=/disk1:/disk2:/disk3
+.TP
+Maximum compression
+yacfs /mnt/data \-o pool=/data/pool,compress=19
+
+.SH TOOLS
+.TP
+.B yacfs-ctl
+Pool status, snapshot management, rollback
+.TP
+.B yacfs-gc
+Remove orphaned blocks (garbage collection)
+.TP
+.B yacfs-scrub
+Verify all data integrity
+.TP
+.B yacfs-send
+Send snapshot to remote receiver
+.TP
+.B yacfs-receive
+Receive snapshots from remote senders
+
+.SH FILES
+.TP
+.I /usr/local/bin/yacfs
+Main filesystem daemon
+.TP
+.I /usr/local/bin/yacfs-*
+Management tools
+.TP
+.I /etc/systemd/system/yacfs@.service
+Systemd mount unit
+
+.SH BUGS
+Report bugs to https://github.com/spivanatalie64/spivanatalie64.github.io/issues
+
+.SH AUTHORS
+Natalie Spiva <natalie@acreetionos>, Darren Clift <cobra3282000>
+.SH LICENSE
+GPLv3

@@ -8,7 +8,7 @@
 #include <unistd.h>
 
 static int hash_from_name(const char *name, uint64_t *hash) {
-    char *dot = strchr(name, '.');
+    const char *dot = strchr(name, '.');
     if (!dot || strcmp(dot, ".blk") != 0) return -1;
     char buf[17];
     size_t len = dot - name;

@@ -1,0 +1,14 @@
+[Unit]
+Description=YAcFS mount for %I
+Documentation=man:yacfs(1)
+After=network.target local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/yacfs /mnt/%i -o pool=/data/%i,compress=1
+ExecStop=/usr/bin/fusermount3 -u /mnt/%i
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
