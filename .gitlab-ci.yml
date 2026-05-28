@@ -1,0 +1,36 @@
+image: archlinux:latest
+
+stages:
+  - build
+  - test
+
+before_script:
+  - pacman -Syu --noconfirm fuse3 zstd xxhash base-devel
+  - which gcc || pacman -S --noconfirm gcc
+
+build:
+  stage: build
+  script:
+    - make clean
+    - make
+  artifacts:
+    paths:
+      - yacfs-gc
+      - yacfs-scrub
+      - yacfs-ctl
+      - yacfs-pool-create
+      - yacfs-snap-rotate
+    expire_in: 1 week
+
+test:
+  stage: test
+  script:
+    - make clean && make
+    - ./yacfs-gc 2>&1 | head -3
+    - ./yacfs-scrub 2>&1 | head -3
+    - ./yacfs-ctl 2>&1 | head -5
+    - ./yacfs-pool-create /tmp/ci-pool
+    - ./yacfs-snap-rotate /tmp/ci-pool 5 2>&1 || true
+    - rm -rf /tmp/ci-pool
+  needs:
+    - build
