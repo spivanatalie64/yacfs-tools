@@ -1,4 +1,4 @@
-CFLAGS = -Wall -Wextra -O3 -march=native -flto -I src
+CFLAGS = -Wall -Wextra -O3 -flto -I src
 LDFLAGS = -lpthread -flto
 PREFIX = /usr/local
 
